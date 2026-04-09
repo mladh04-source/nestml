@@ -1,1 +1,8 @@
-../../resources_nest/point_neuron/directives_cpp/DelayVariablesDeclaration.jinja2
+{#
+  Generates C++ declaration of vector for variables with delay
+  @param variable VariableSymbol
+  @result C++ declaration
+#}
+  size_t delay_{{variable.get_symbol_name()}}_steps;
+  std::vector< double > delayed_{{variable.get_symbol_name()}};
+  size_t delayed_{{variable.get_symbol_name()}}_idx;
