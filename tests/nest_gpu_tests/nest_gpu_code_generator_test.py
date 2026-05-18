@@ -9,7 +9,7 @@
 # NEST is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 2 of the License, or
-# (at your option) any later version.
+# at your option any later version.
 #
 # NEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,14 +37,20 @@ class TestNESTGPUCodeGenerator:
                 os.path.join(
                     os.path.dirname(__file__),
                     os.path.join(
-                        os.pardir, os.pardir, "models", "neurons", "iaf_psc_exp_neuron.nestml"
+                        os.pardir,
+                        os.pardir,
+                        "models",
+                        "neurons",
+                        "iaf_psc_exp_neuron.nestml",
                     ),
                 )
             )
         )
+
         target_path = "target_gpu"
         logging_level = "INFO"
         suffix = "_nestml"
+
         codegen_opts = {
             "nest_gpu_path": NEST_GPU_REPO,
         }
@@ -63,20 +69,29 @@ class TestNESTGPUCodeGenerator:
             "aeif_cond_alpha_alt_neuron.nestml",
             "izhikevich_neuron.nestml",
         ]
+
         input_path = [
             os.path.join(
                 os.path.realpath(
                     os.path.join(
                         os.path.dirname(__file__),
-                        os.path.join(os.pardir, os.pardir, "models", "neurons", model),
+                        os.path.join(
+                            os.pardir,
+                            os.pardir,
+                            "models",
+                            "neurons",
+                            model,
+                        ),
                     )
                 )
             )
             for model in model_files
         ]
+
         target_path = "target_gpu_numeric"
         logging_level = "INFO"
         suffix = "_nestml"
+
         codegen_opts = {
             "solver": "numeric",
             "nest_gpu_path": NEST_GPU_REPO,
@@ -92,23 +107,31 @@ class TestNESTGPUCodeGenerator:
 
     def test_nest_gpu_code_generator_experimental(self):
         model_files = [
-            "iaf_psc_exp_neuron.nestml",
             "aeif_cond_alpha_alt_neuron.nestml",
         ]
+
         input_path = [
             os.path.join(
                 os.path.realpath(
                     os.path.join(
                         os.path.dirname(__file__),
-                        os.path.join(os.pardir, os.pardir, "models", "neurons", model),
+                        os.path.join(
+                            os.pardir,
+                            os.pardir,
+                            "models",
+                            "neurons",
+                            model,
+                        ),
                     )
                 )
             )
             for model in model_files
         ]
+
         target_path = "target_gpu_experimental"
         logging_level = "INFO"
         suffix = "_nestml"
+
         codegen_opts = {
             "solver": "experimental",
             "nest_gpu_path": NEST_GPU_REPO,

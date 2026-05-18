@@ -9,7 +9,7 @@
 # NEST is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 2 of the License, or
-# (at your option) any later version.
+# at your option any later version.
 #
 # NEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,21 +27,30 @@ from pynestml.meta_model.ast_variable import ASTVariable
 class NESTGPUCodeGeneratorUtils:
 
     @classmethod
-    def print_symbol_origin(cls, variable_symbol: VariableSymbol, variable: ASTVariable) -> str:
+    def print_symbol_origin(cls,
+                            variable_symbol: VariableSymbol,
+                            variable: ASTVariable) -> str:
         """
-        Returns a prefix corresponding to the origin of the variable symbol.
-        :param variable_symbol: a single variable symbol.
-        :return: the corresponding prefix
+        Returns the C/CUDA access expression pattern for a variable.
+        Normal generated neuron code  
+        Numeric derivative code
+
+        The numeric path relies on variable._is_numeric being set by the
+        numeric differentiation generation.
         """
         if variable_symbol.block_type in [BlockType.STATE, BlockType.EQUATION]:
             if "_is_numeric" in dir(variable) and variable._is_numeric:
-                return 'y[%s]'
-            return 'var[%s]'
+                return "y[%s]"
+
+            return "var[%s]"
 
         if variable_symbol.is_spike_input_port():
-            return 'var[N_SCAL_VAR + %s]'
+            return "var[N_SCAL_VAR + %s]"
 
-        if variable_symbol.block_type in [BlockType.PARAMETERS, BlockType.INTERNALS] or variable_symbol.is_continuous_input_port():
-            return 'param[%s]'
+        if (
+            variable_symbol.block_type in [BlockType.PARAMETERS, BlockType.INTERNALS]
+            or variable_symbol.is_continuous_input_port()
+        ):
+            return "param[%s]"
 
-        return ''
+        return ""

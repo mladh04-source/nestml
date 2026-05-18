@@ -1,3 +1,10 @@
+{#-
+NeuronHeaderOdeintExperimental.jinja2
+
+Generic Boost.Odeint/Thrust header template for NEST GPU neuron models.
+The Boost.Odeint solver state is integrated directly into the neuron class.
+#}
+
 /*
  *  {{ neuronName }}.h
  *
@@ -25,12 +32,12 @@
 
 #include <iostream>
 #include <string>
+#include <thrust/device_vector.h>
 
 #include "cuda_error.h"
 #include "node_group.h"
 #include "base_neuron.h"
 #include "neuron_models.h"
-#include "iaf_psc_exp_odeint_solver.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -43,13 +50,18 @@ namespace {{ neuronName }}_ns
 
 } // namespace {{ neuronName }}_ns
 
+
 class {{ neuronName }} : public BaseNeuron
 {
 public:
   ~{{ neuronName }}();
 
-  // Host-driven numeric solver operating on NEST GPU device arrays.
-  IafPscExpOdeintSolver* odeint_solver_ = nullptr;
+  /*
+   * Compact Boost.Odeint / Thrust state buffer.
+   * This mirrors only the scalar ODE state variables.
+   * Port variables remain in the normal NEST GPU var_arr_.
+   */
+  thrust::device_vector<float>* ode_state_ = nullptr;
 
   int Init(int i_node_0, int n_neuron, int n_port, int i_group,
            unsigned long long* seed = nullptr);

@@ -1,7 +1,15 @@
+{#-
+NeuronClassOdeintExperimental.jinja2
 
+Generic Boost.Odeint/Thrust neuron class template for NEST GPU.
+
+This template generates only the neuron .cu file.
+There is no separate solver class.
+The Boost.Odeint Dormand-Prince solver is integrated directly here.
+#}
 
 /*
- *  aeif_cond_alpha_alt_neuron_nestml.cu
+ *  {{ neuronName }}.cu
  *
  *  This file is part of NEST GPU.
  *
@@ -34,10 +42,12 @@
 #include <thrust/for_each.h>
 #include <thrust/iterator/counting_iterator.h>
 
-#include "aeif_cond_alpha_alt_neuron_nestml.h"
+#include "{{ neuronName }}.h"
 #include "spike_buffer.h"
 
-using namespace aeif_cond_alpha_alt_neuron_nestml_ns;
+{%- import 'directives/SetScalParamAndVar.jinja2' as set_scal_param_var with context %}
+
+using namespace {{ neuronName }}_ns;
 
 
 /*
@@ -46,7 +56,7 @@ using namespace aeif_cond_alpha_alt_neuron_nestml_ns;
  * It stores runtime information that may be needed by generated
  * derivative or event-handling code.
  */
-struct aeif_cond_alpha_alt_neuron_nestml_odeint_context
+struct {{ neuronName }}_odeint_context
 {
   int i_node_0_;
 };
@@ -67,7 +77,7 @@ typedef thrust::device_vector<value_type> ode_state_type;
  *
  * Port variables are intentionally not copied.
  */
-__global__ void aeif_cond_alpha_alt_neuron_nestml_CopyNestToOdeState(
+__global__ void {{ neuronName }}_CopyNestToOdeState(
     int n_node,
     const float* var_arr,
     int n_var,
@@ -91,7 +101,7 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_CopyNestToOdeState(
  *
  * Port variables remain untouched here.
  */
-__global__ void aeif_cond_alpha_alt_neuron_nestml_CopyOdeStateToNest(
+__global__ void {{ neuronName }}_CopyOdeStateToNest(
     int n_node,
     float* var_arr,
     int n_var,
@@ -108,19 +118,19 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_CopyOdeStateToNest(
   for (int i = 0; i < N_SCAL_VAR; ++i)
     dst[i] = src[i];
 
-
+{% if utils.get_variable_by_name(astnode, "refr_t") %}
   if (dst[i_refr_t] < 0.0f)
     dst[i_refr_t] = 0.0f;
-
+{% endif %}
 }
 
 } // anonymous namespace
 
 
-namespace aeif_cond_alpha_alt_neuron_nestml_odeint_system_ns
+namespace {{ neuronName }}_odeint_system_ns
 {
 
-using namespace aeif_cond_alpha_alt_neuron_nestml_ns;
+using namespace {{ neuronName }}_ns;
 
 
 /*
@@ -132,58 +142,14 @@ using namespace aeif_cond_alpha_alt_neuron_nestml_ns;
  * NumericDifferentiationFunction.jinja2 must be rendered with gsl_printer,
  * otherwise expressions may be generated with var[...] instead of y[...].
  */
+{%- set old_printer = printer %}
+{%- set printer = gsl_printer %}
 
-template<int NVAR, int NPARAM>
-__device__
-void Derivatives_g_exc_g_inh_refr_t_w(
-    double x,
-    float *y,
-    float *dydx,
-    float *param,
-    aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct)
-{  
+{% for ast in utils.get_all_integrate_odes_calls_unique(neuron) %}
+{%- include "directives/NumericDifferentiationFunction.jinja2" %}
+{% endfor %}
 
-    dydx[i_g_exc] =1.0 * y[i_g_exc__d];
-      
-    dydx[i_g_exc__d] =(-y[i_g_exc]) / pow(param[i_tau_syn_exc], 2) - 2 * y[i_g_exc__d] / param[i_tau_syn_exc];
-      
-    dydx[i_g_inh] =1.0 * y[i_g_inh__d];
-      
-    dydx[i_g_inh__d] =(-y[i_g_inh]) / pow(param[i_tau_syn_inh], 2) - 2 * y[i_g_inh__d] / param[i_tau_syn_inh];
-      
-    dydx[i_V_m] =0;
-      
-    dydx[i_w] =((-param[i_E_L]) * param[i_a] + param[i_a] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_tau_w];
-      
-    dydx[i_refr_t] =(-1.0);
-      
-}
-template<int NVAR, int NPARAM>
-__device__
-void Derivatives_V_m_g_exc_g_inh_w(
-    double x,
-    float *y,
-    float *dydx,
-    float *param,
-    aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct)
-{  
-
-    dydx[i_g_exc] =1.0 * y[i_g_exc__d];
-      
-    dydx[i_g_exc__d] =(-y[i_g_exc]) / pow(param[i_tau_syn_exc], 2) - 2 * y[i_g_exc__d] / param[i_tau_syn_exc];
-      
-    dydx[i_g_inh] =1.0 * y[i_g_inh__d];
-      
-    dydx[i_g_inh__d] =(-y[i_g_inh]) / pow(param[i_tau_syn_inh], 2) - 2 * y[i_g_inh__d] / param[i_tau_syn_inh];
-      
-    dydx[i_V_m] =param[i_g_L] * (param[i_Delta_T] * exp(((-param[i_V_th]) + min(y[i_V_m], param[i_V_peak])) / param[i_Delta_T]) / param[i_C_m] + param[i_E_L] / param[i_C_m] - min(y[i_V_m], param[i_V_peak]) / param[i_C_m]) + param[i_E_exc] * y[i_g_exc] / param[i_C_m] + param[i_E_inh] * y[i_g_inh] / param[i_C_m] + param[i_I_e] / param[i_C_m] + param[i_I_stim] / param[i_C_m] + ((-y[i_g_exc]) * min(y[i_V_m], param[i_V_peak]) - y[i_g_inh] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_C_m];
-      
-    dydx[i_w] =((-param[i_E_L]) * param[i_a] + param[i_a] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_tau_w];
-      
-    dydx[i_refr_t] =0;
-      
-}
-
+{%- set printer = old_printer %}
 
 
 /*
@@ -197,32 +163,38 @@ void OdeintDerivatives(
     float* y,
     float* dydx,
     float* param,
-    aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct)
+    {{ neuronName }}_odeint_context data_struct)
 {
-
-  if (y[i_refr_t] > 0)
-  {
-    aeif_cond_alpha_alt_neuron_nestml_odeint_system_ns::Derivatives_g_exc_g_inh_refr_t_w<NVAR, NPARAM>(
-        x,
-        y,
-        dydx,
-        param,
-        data_struct);
-  }
-
+{% for ast in utils.get_all_integrate_odes_calls_unique(neuron) %}
+{%- set parent = utils.get_integrate_odes_parent(ast) %}
+{%- if parent is not none %}
+{%- if utils.is_if_clause(parent) %}
+  if ({{ gsl_printer.print(parent.get_condition()) }})
+{%- elif utils.is_elif_clause(parent) %}
+  else if ({{ gsl_printer.print(parent.get_condition()) }})
+{%- else %}
   else
+{%- endif %}
   {
-    aeif_cond_alpha_alt_neuron_nestml_odeint_system_ns::Derivatives_V_m_g_exc_g_inh_w<NVAR, NPARAM>(
+    {{ neuronName }}_odeint_system_ns::Derivatives{% if ast.get_args() | length > 0 %}_{{ utils.integrate_odes_args_str_from_function_call(ast) }}{% endif %}<NVAR, NPARAM>(
         x,
         y,
         dydx,
         param,
         data_struct);
   }
-
+{%- else %}
+  {{ neuronName }}_odeint_system_ns::Derivatives<NVAR, NPARAM>(
+      x,
+      y,
+      dydx,
+      param,
+      data_struct);
+{%- endif %}
+{% endfor %}
 }
 
-} // namespace aeif_cond_alpha_alt_neuron_nestml_odeint_system_ns
+} // namespace {{ neuronName }}_odeint_system_ns
 
 
 namespace
@@ -231,10 +203,10 @@ namespace
 /*
  * Device functor for the right-hand side of the ODE system.
  *
- * Odeint calls aeif_cond_alpha_alt_neuron_nestml_OdeintSystem on the host.
+ * Odeint calls {{ neuronName }}_OdeintSystem on the host.
  * That system function launches this Thrust functor on the GPU.
  */
-struct aeif_cond_alpha_alt_neuron_nestml_DerivativeFunctor
+struct {{ neuronName }}_DerivativeFunctor
 {
   const float* x;
   float* dxdt;
@@ -260,10 +232,10 @@ struct aeif_cond_alpha_alt_neuron_nestml_DerivativeFunctor
     for (int i = 0; i < NVAR; ++i)
       y[i] = y_src[i];
 
-    aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct;
+    {{ neuronName }}_odeint_context data_struct;
     data_struct.i_node_0_ = 0;
 
-    aeif_cond_alpha_alt_neuron_nestml_odeint_system_ns::OdeintDerivatives<NVAR, NPARAM>(
+    {{ neuronName }}_odeint_system_ns::OdeintDerivatives<NVAR, NPARAM>(
         0.0,
         y,
         dydt,
@@ -279,7 +251,7 @@ struct aeif_cond_alpha_alt_neuron_nestml_DerivativeFunctor
  * x: compact scalar state vector on GPU
  * dxdt:compact derivative vector on GPU
  */
-struct aeif_cond_alpha_alt_neuron_nestml_OdeintSystem
+struct {{ neuronName }}_OdeintSystem
 {
   const float* param;
   int param_stride;
@@ -295,7 +267,7 @@ struct aeif_cond_alpha_alt_neuron_nestml_OdeintSystem
     thrust::counting_iterator<int> begin(0);
     thrust::counting_iterator<int> end(n_neuron);
 
-    aeif_cond_alpha_alt_neuron_nestml_DerivativeFunctor functor;
+    {{ neuronName }}_DerivativeFunctor functor;
     functor.x = x_ptr;
     functor.dxdt = dxdt_ptr;
     functor.param = param;
@@ -314,7 +286,7 @@ struct aeif_cond_alpha_alt_neuron_nestml_OdeintSystem
  * Handles onReceive before ODE integration.
  * Incoming spikes affect the ODE state before the Boost.Odeint step.
  */
-__global__ void aeif_cond_alpha_alt_neuron_nestml_PreUpdate(
+__global__ void {{ neuronName }}_PreUpdate(
     int n_node,
     int i_node_0,
     float* var_arr,
@@ -334,27 +306,24 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_PreUpdate(
   double x = 0.0;
   bool end_time_step = true;
 
-  aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct;
+  {{ neuronName }}_odeint_context data_struct;
   data_struct.i_node_0_ = i_node_0;
 
   /*
    * Begin NESTML generated code for onReceive block(s).
    */
-
-  if (y[N_SCAL_VAR + i_exc_spikes] != 0.0f)
-  {    
-    y[i_g_exc__d] += (0.001 * var[N_SCAL_VAR + i_exc_spikes]) * (M_E / param[i_tau_syn_exc]) * 1.0 * 1000.0;
-    y[N_SCAL_VAR + i_exc_spikes] = 0.0f;
+{% for blk in neuron.get_on_receive_blocks() %}
+{%- set inport = blk.get_port_name() %}
+  if (y[N_SCAL_VAR + i_{{ inport }}] != 0.0f)
+  {
+{%- set ast = blk.get_stmts_body() %}
+{%- filter indent(4, True) %}
+{%- include "directives/Block.jinja2" %}
+{%- endfilter %}
+    y[N_SCAL_VAR + i_{{ inport }}] = 0.0f;
   }
 
-
-  if (y[N_SCAL_VAR + i_inh_spikes] != 0.0f)
-  {    
-    y[i_g_inh__d] += (0.001 * var[N_SCAL_VAR + i_inh_spikes]) * (M_E / param[i_tau_syn_inh]) * 1.0 * 1000.0;
-    y[N_SCAL_VAR + i_inh_spikes] = 0.0f;
-  }
-
-
+{% endfor %}
 }
 
 
@@ -363,9 +332,9 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_PreUpdate(
  *
  * Handles remaining update-block statements, threshold, reset,
  * spike emission and safety reset of spike input ports.
- * onReceive is handled before integration in aeif_cond_alpha_alt_neuron_nestml_PreUpdate().
+ * onReceive is handled before integration in {{ neuronName }}_PreUpdate().
  */
-__global__ void aeif_cond_alpha_alt_neuron_nestml_PostUpdate(
+__global__ void {{ neuronName }}_PostUpdate(
     int n_node,
     int i_node_0,
     float* var_arr,
@@ -385,7 +354,7 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_PostUpdate(
   double x = 0.0;
   bool end_time_step = true;
 
-  aeif_cond_alpha_alt_neuron_nestml_odeint_context data_struct;
+  {{ neuronName }}_odeint_context data_struct;
   data_struct.i_node_0_ = i_node_0;
 
   /*
@@ -394,55 +363,61 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_PostUpdate(
    * integrate_odes() itself has already been handled by Boost.Odeint.
    * The generated Block.jinja2 code normally leaves only comments for integrate_odes() and keeps additional statements.
    */
-  if (y[i_refr_t] > 0)
-  {  
-
-    // start rendered code for integrate_odes(g_exc, g_inh, refr_t, w)
-  }
-  else
-  {  
-
-    // start rendered code for integrate_odes(V_m, g_exc, g_inh, w)
-  }
+{%- if neuron.get_update_blocks() %}
+{%- filter indent(2) %}
+{%- for block in neuron.get_update_blocks() %}
+{%- set ast = block.get_stmts_body() %}
+{%- if ast.print_comment('*')|length > 1 %}
+/*
+ {{ ast.print_comment('*') }}
+ */
+{%- endif %}
+{%- include "directives/Block.jinja2" %}
+{%- endfor %}
+{%- endfilter %}
+{%- endif %}
 
   /*
    * Begin NESTML generated code for onCondition block(s).
    */
-
-
-  if (y[i_refr_t] <= 0 && y[i_V_m] >= param[i_V_th])
-  {    
-    y[i_refr_t] = param[i_refr_T];
-    y[i_V_m] = param[i_V_reset];
-    y[i_w] += param[i_b];
-    PushSpike(i_node_0 + i_neuron, 1.0);;
+{% if neuron.get_on_condition_blocks() %}
+{% for block in neuron.get_on_condition_blocks() %}
+  if ({{ printer.print(block.get_cond_expr()) }})
+  {
+{%- set ast = block.get_stmts_body() %}
+{%- if ast.print_comment('*') | length > 1 %}
+/*
+ {{ ast.print_comment('*') }}
+ */
+{%- endif %}
+{%- filter indent(4, True) %}
+{%- include "directives/Block.jinja2" %}
+{%- endfilter %}
   }
 
-
-
+{% endfor %}
+{% endif %}
 
   /*
    * Safety reset of all spike input port variables.
    * Normally they are already reset in PreUpdate.
    */
-
-  y[N_SCAL_VAR + i_exc_spikes] = 0.0f;
-
-  y[N_SCAL_VAR + i_inh_spikes] = 0.0f;
-
+{% for variable_symbol in neuron.get_spike_input_ports() %}
+  y[N_SCAL_VAR + i_{{ variable_symbol.get_symbol_name() }}] = 0.0f;
+{% endfor %}
 }
 
 
 
 // Class methods
 
-aeif_cond_alpha_alt_neuron_nestml::~aeif_cond_alpha_alt_neuron_nestml()
+{{ neuronName }}::~{{ neuronName }}()
 {
   Free();
 }
 
 
-int aeif_cond_alpha_alt_neuron_nestml::Init(int i_node_0,
+int {{ neuronName }}::Init(int i_node_0,
                            int n_node,
                            int /*n_port*/,
                            int i_group,
@@ -451,11 +426,11 @@ int aeif_cond_alpha_alt_neuron_nestml::Init(int i_node_0,
   BaseNeuron::Init(
       i_node_0,
       n_node,
-      2 /*n_port*/,
+      {{ neuron.get_spike_input_ports() | length }} /*n_port*/,
       i_group,
       seed);
 
-  node_type_ = i_aeif_cond_alpha_alt_neuron_nestml_model;
+  node_type_ = i_{{ neuronName }}_model;
 
 
   /*
@@ -477,203 +452,58 @@ int aeif_cond_alpha_alt_neuron_nestml::Init(int i_node_0,
   AllocVarArr();
 
 
-  scal_var_name_   = aeif_cond_alpha_alt_neuron_nestml_scal_var_name;
-  scal_param_name_ = aeif_cond_alpha_alt_neuron_nestml_scal_param_name;
-  port_var_name_   = aeif_cond_alpha_alt_neuron_nestml_port_var_name;
+  scal_var_name_   = {{ neuronName }}_scal_var_name;
+  scal_param_name_ = {{ neuronName }}_scal_param_name;
+  port_var_name_   = {{ neuronName }}_port_var_name;
 
 
   /*
    * Parameters
    */
-
+{% for variable_symbol in neuron.get_parameter_symbols() %}
+{%- set variable = utils.get_parameter_variable_by_name(astnode, variable_symbol.get_symbol_name()) %}
   SetScalParam(
       0,
       n_node,
-      "C_m",
-      
-  281.0);  // as pF
-
-  SetScalParam(
-      0,
-      n_node,
-      "refr_T",
-      
-  2);  // as ms
-
-  SetScalParam(
-      0,
-      n_node,
-      "V_reset",
-      
-  (-60.0));  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "g_L",
-      
-  30.0);  // as nS
-
-  SetScalParam(
-      0,
-      n_node,
-      "E_L",
-      
-  (-70.6));  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "a",
-      
-  4);  // as nS
-
-  SetScalParam(
-      0,
-      n_node,
-      "b",
-      
-  80.5);  // as pA
-
-  SetScalParam(
-      0,
-      n_node,
-      "Delta_T",
-      
-  2.0);  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "tau_w",
-      
-  144.0);  // as ms
-
-  SetScalParam(
-      0,
-      n_node,
-      "V_th",
-      
-  (-50.4));  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "V_peak",
-      
-  0);  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "tau_syn_exc",
-      
-  0.2);  // as ms
-
-  SetScalParam(
-      0,
-      n_node,
-      "tau_syn_inh",
-      
-  2.0);  // as ms
-
-  SetScalParam(
-      0,
-      n_node,
-      "E_exc",
-      
-  0);  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "E_inh",
-      
-  (-85.0));  // as mV
-
-  SetScalParam(
-      0,
-      n_node,
-      "I_e",
-      
-  0);  // as pA
-
+      "{{ printer_no_origin.print(variable) }}",
+      {{ set_scal_param_var.SetScalParamAndVar(variable_symbol.get_declaring_expression()) }});  // as {{ variable_symbol.get_type_symbol().print_symbol() }}
+{% endfor %}
 
   /*
    * Internal variables
    */
-
+{% for variable_symbol in neuron.get_internal_symbols() %}
+{%- set variable = utils.get_internal_variable_by_name(astnode, variable_symbol.get_symbol_name()) %}
   SetScalParam(
       0,
       n_node,
-      "__h",
+      "{{ printer_no_origin.print(variable) }}",
       0.0);
-
+{% endfor %}
 
   /*
    * Continuous input ports
    */
-
+{% for variable_symbol in neuron.get_continuous_input_ports() %}
+{%- set variable = utils.get_input_port_by_name(astnode.get_input_blocks(), variable_symbol.get_symbol_name()) %}
   SetScalParam(
       0,
       n_node,
-      "I_stim",
+      "{{ variable.get_name() }}",
       0.0);
-
+{% endfor %}
 
   /*
    * State variables
    */
-
+{% for variable_symbol in neuron.get_state_symbols_sorted_by_suffix() %}
+{%- set variable = utils.get_state_variable_by_name(astnode, variable_symbol.get_symbol_name()) %}
   SetScalVar(
       0,
       n_node,
-      "V_m",
-      
-  *GetScalParam(0, n_node, "E_L"));  // as mV
-
-  SetScalVar(
-      0,
-      n_node,
-      "w",
-      
-  0);  // as pA
-
-  SetScalVar(
-      0,
-      n_node,
-      "refr_t",
-      
-  0);  // as ms
-
-  SetScalVar(
-      0,
-      n_node,
-      "g_exc",
-      
-  0);  // as nS
-
-  SetScalVar(
-      0,
-      n_node,
-      "g_exc__d",
-      
-  0);  // as nS / ms
-
-  SetScalVar(
-      0,
-      n_node,
-      "g_inh",
-      
-  0);  // as nS
-
-  SetScalVar(
-      0,
-      n_node,
-      "g_inh__d",
-      
-  0);  // as nS / ms
-
+      "{{ printer_no_origin.print(variable) }}",
+      {{ set_scal_param_var.SetScalParamAndVar(variable_symbol.get_declaring_expression()) }});  // as {{ variable_symbol.get_type_symbol().print_symbol() }}
+{% endfor %}
 
 
   /*
@@ -684,7 +514,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Init(int i_node_0,
       static_cast<size_t>(n_node_) * static_cast<size_t>(N_SCAL_VAR));
 
 
-
+{% if neuron.get_spike_input_ports() | length > 0 %}
   /*
    * Multiplication factor of input signal is always 1 for all nodes.
    */
@@ -706,21 +536,21 @@ int aeif_cond_alpha_alt_neuron_nestml::Init(int i_node_0,
    * Process the input spikes.
    */
   port_input_arr_ =
-      GetVarArr() + n_scal_var_ + GetPortVarIdx("exc_spikes");
+      GetVarArr() + n_scal_var_ + GetPortVarIdx("{{ utils.get_first_excitatory_port(neuron) }}");
 
   port_input_arr_step_ =
       n_var_;
 
   port_input_port_step_ =
-      1;
-
+      {{ (neuron.get_spike_input_ports() | length) - 1 }};
+{% endif %}
 
 
   return 0;
 }
 
 
-int aeif_cond_alpha_alt_neuron_nestml::Calibrate(double /*time_min*/,
+int {{ neuronName }}::Calibrate(double /*time_min*/,
                                 float /*time_resolution*/)
 {
   /*
@@ -730,7 +560,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Calibrate(double /*time_min*/,
 }
 
 
-int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
+int {{ neuronName }}::Update(long long /*it*/, double t1)
 {
   float dt = 0.0f;
 
@@ -746,7 +576,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
   /*
    * Apply incoming spikes before ODE integration.
    */
-  aeif_cond_alpha_alt_neuron_nestml_PreUpdate
+  {{ neuronName }}_PreUpdate
       <<< (n_node_ + 1023) / 1024, 1024 >>>(
           n_node_,
           i_node_0_,
@@ -767,7 +597,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
    * This is done after PreUpdate, so incoming spikes already affected
    * the scalar ODE state before integration starts.
    */
-  aeif_cond_alpha_alt_neuron_nestml_CopyNestToOdeState
+  {{ neuronName }}_CopyNestToOdeState
       <<< (n_node_ + 1023) / 1024, 1024 >>>(
           n_node_,
           var_arr_,
@@ -789,7 +619,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
       boost::numeric::odeint::thrust_operations> stepper_type;
 
 
-  aeif_cond_alpha_alt_neuron_nestml_OdeintSystem system;
+  {{ neuronName }}_OdeintSystem system;
   system.param        = param_arr_;
   system.param_stride = n_param_;
   system.n_neuron     = n_node_;
@@ -819,7 +649,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
    * Copy integrated scalar state back to normal NEST GPU state array.
    * Port variables are not touched here.
    */
-  aeif_cond_alpha_alt_neuron_nestml_CopyOdeStateToNest
+  {{ neuronName }}_CopyOdeStateToNest
       <<< (n_node_ + 1023) / 1024, 1024 >>>(
           n_node_,
           var_arr_,
@@ -832,7 +662,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
   /*
    * Handle threshold, reset and PushSpike after ODE integration.
    */
-  aeif_cond_alpha_alt_neuron_nestml_PostUpdate
+  {{ neuronName }}_PostUpdate
       <<< (n_node_ + 1023) / 1024, 1024 >>>(
           n_node_,
           i_node_0_,
@@ -848,7 +678,7 @@ int aeif_cond_alpha_alt_neuron_nestml::Update(long long /*it*/, double t1)
 }
 
 
-int aeif_cond_alpha_alt_neuron_nestml::Free()
+int {{ neuronName }}::Free()
 {
   delete ode_state_;
   ode_state_ = nullptr;

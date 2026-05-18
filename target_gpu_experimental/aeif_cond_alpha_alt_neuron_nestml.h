@@ -27,12 +27,12 @@
 
 #include <iostream>
 #include <string>
+#include <thrust/device_vector.h>
 
 #include "cuda_error.h"
 #include "node_group.h"
 #include "base_neuron.h"
 #include "neuron_models.h"
-#include "aeif_cond_alpha_alt_odeint_solver.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -40,7 +40,6 @@ extern __constant__ float NESTGPUTimeResolution;
 
 namespace aeif_cond_alpha_alt_neuron_nestml_ns
 {
-
 enum ScalVarIndexes {
   i_V_m,
   i_w,
@@ -69,6 +68,7 @@ enum ScalParamIndexes {
   i_E_exc,
   i_E_inh,
   i_I_e,
+  i___h,
   i_I_stim,
   N_SCAL_PARAM
 };
@@ -106,6 +106,7 @@ const std::string aeif_cond_alpha_alt_neuron_nestml_scal_param_name[N_SCAL_PARAM
   "E_exc",
   "E_inh",
   "I_e",
+  "__h",
   "I_stim",
 };
 
@@ -122,7 +123,12 @@ class aeif_cond_alpha_alt_neuron_nestml : public BaseNeuron
 public:
   ~aeif_cond_alpha_alt_neuron_nestml();
 
-  AeifCondAlphaAltOdeintSolver* odeint_solver_ = nullptr;
+  /*
+   * Compact Boost.Odeint / Thrust state buffer.
+   * This mirrors only the scalar ODE state variables.
+   * Port variables remain in the normal NEST GPU var_arr_.
+   */
+  thrust::device_vector<float>* ode_state_ = nullptr;
 
   int Init(int i_node_0, int n_neuron, int n_port, int i_group,
            unsigned long long* seed = nullptr);

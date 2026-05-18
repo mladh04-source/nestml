@@ -18,11 +18,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with NEST.  If not, see <http://www.gnu.org/licenses/>.
+
 import copy
 import glob
 import os
 import shutil
-from typing import Dict, Sequence, Optional, Mapping, Any, List
+from typing import Dict, Sequence, Optional, Mapping, List
 
 from pynestml.codegeneration.printers.c_simple_expression_printer import CSimpleExpressionPrinter
 from pynestml.codegeneration.printers.cpp_printer import CppPrinter
@@ -32,14 +33,18 @@ from pynestml.codegeneration.printers.nest_gpu_numeric_function_call_printer imp
 from pynestml.codegeneration.printers.nest_gpu_numeric_variable_printer import NESTGPUNumericVariablePrinter
 from pynestml.codegeneration.printers.nest_gpu_variable_printer import NESTGPUVariablePrinter
 from pynestml.codegeneration.printers.unitless_c_simple_expression_printer import UnitlessCSimpleExpressionPrinter
+
 from pynestml.meta_model.ast_model import ASTModel
 from pynestml.utils.logger import LoggingLevel, Logger
 from pynestml.codegeneration.nest_code_generator import NESTCodeGenerator
 from pynestml.frontend.frontend_configuration import FrontendConfiguration
 
 
-def replace_text_between_tags(filepath, replace_str, begin_tag="// <<BEGIN_NESTML_GENERATED>>",
-                              end_tag="// <<END_NESTML_GENERATED>>", rfind=False):
+def replace_text_between_tags(filepath,
+                              replace_str,
+                              begin_tag="// <<BEGIN_NESTML_GENERATED>>",
+                              end_tag="// <<END_NESTML_GENERATED>>",
+                              rfind=False):
     with open(filepath, "r") as f:
         file_str = f.read()
 
@@ -51,51 +56,78 @@ def replace_text_between_tags(filepath, replace_str, begin_tag="// <<BEGIN_NESTM
         end_pos = file_str.find(end_tag)
 
     file_str = file_str[:start_pos] + replace_str + file_str[end_pos:]
+
     with open(filepath, "w") as f:
         f.write(file_str)
-    f.close()
 
 
 class NESTGPUCodeGenerator(NESTCodeGenerator):
     """
-    A code generator for NEST GPU target
+    Code generator for the NEST GPU target.
+    Supported solver modes:
+      solver = "analytic"
+        Uses the standard analytic NEST GPU templates.
+      solver = "numeric"
+        Uses the existing RK5-based numeric NEST GPU templates.
+      solver = "experimental"
+        Uses experimental Boost.Odeint/Thrust templates.
+
+        In this mode the generator creates only two files per neuron:
+          <neuron>.h
+          <neuron>.cu
+
+        The Boost.Odeint solver is integrated directly into the generated
+        neuron .cu/.h files. 
     """
 
     _default_options = {
-    "neuron_parent_class": "BaseNeuron",
-    "neuron_parent_class_include": "archiving_node.h",
-    "preserve_expressions": False,
-    "simplify_expression": "sympy.logcombine(sympy.powsimp(sympy.expand(expr)))",
-    "neuron_models": [],
-    "synapse_models": [],
-    "neuron_synapse_pairs": [],
-    "continuous_state_buffering_method": "continuous_time_buffer",
-    "gsl_adaptive_step_size_controller": "with_respect_to_solution",
-    "gap_junctions": {"enable": False},
-    "templates": {
-        "path": "resources_nest_gpu/point_neuron",
-        "model_templates": {
-            "neuron": ["@NEURON_NAME@.cu.jinja2", "@NEURON_NAME@.h.jinja2"]
-        },
-        "module_templates": []
-    },
-    "solver": "analytic",
-    "numeric_solver": "rk45",
-    "nest_gpu_path": None,
-    "nest_gpu_build_path": "build",
-    "nest_gpu_install_path": "install",
-    "experimental_templates": {
-        "path": "resources_nest_gpu_experimental/point_neuron",
-        "model_templates": {
-            "neuron": ["@NEURON_NAME@.cu.jinja2", "@NEURON_NAME@.h.jinja2"]
-        },
-        "module_templates": []
-    }
-}
+        "neuron_parent_class": "BaseNeuron",
+        "neuron_parent_class_include": "archiving_node.h",
+        "preserve_expressions": False,
+        "simplify_expression": "sympy.logcombine(sympy.powsimp(sympy.expand(expr)))",
+        "neuron_models": [],
+        "synapse_models": [],
+        "neuron_synapse_pairs": [],
+        "continuous_state_buffering_method": "continuous_time_buffer",
+        "gsl_adaptive_step_size_controller": "with_respect_to_solution",
+        "gap_junctions": {"enable": False},
 
-    def __init__(self, options: Optional[Mapping[str, Any]] = None):
+        "templates": {
+            "path": "resources_nest_gpu/point_neuron",
+            "model_templates": {
+                "neuron": [
+                    "@NEURON_NAME@.cu.jinja2",
+                    "@NEURON_NAME@.h.jinja2"
+                ]
+            },
+            "module_templates": []
+        },
+
+        "solver": "analytic",
+        "numeric_solver": "rk45",
+
+        "nest_gpu_path": None,
+        "nest_gpu_build_path": "build",
+        "nest_gpu_install_path": "install",
+
+        "experimental_templates": {
+            "path": "resources_nest_gpu_experimental/point_neuron",
+            "model_templates": {
+                "neuron": [
+                    "@NEURON_NAME@.cu.jinja2",
+                    "@NEURON_NAME@.h.jinja2"
+                ]
+            },
+            "module_templates": []
+        }
+    }
+
+    def __init__(self, options: Optional[Mapping[str, object]] = None):
         merged_options = copy.deepcopy(NESTCodeGenerator._default_options)
-        self._deep_update(merged_options, copy.deepcopy(NESTGPUCodeGenerator._default_options))
+        self._deep_update(
+            merged_options,
+            copy.deepcopy(NESTGPUCodeGenerator._default_options)
+        )
 
         if options:
             self._deep_update(merged_options, dict(options))
@@ -103,12 +135,18 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
         # NEST-GPU currently supports neuron templates only.
         # Remove synapse/module templates inherited from NESTCodeGenerator defaults.
         merged_options["templates"]["model_templates"] = {
-            "neuron": ["@NEURON_NAME@.cu.jinja2", "@NEURON_NAME@.h.jinja2"]
+            "neuron": [
+                "@NEURON_NAME@.cu.jinja2",
+                "@NEURON_NAME@.h.jinja2"
+            ]
         }
         merged_options["templates"]["module_templates"] = []
 
         merged_options["experimental_templates"]["model_templates"] = {
-            "neuron": ["@NEURON_NAME@.cu.jinja2", "@NEURON_NAME@.h.jinja2"]
+            "neuron": [
+                "@NEURON_NAME@.cu.jinja2",
+                "@NEURON_NAME@.h.jinja2"
+            ]
         }
         merged_options["experimental_templates"]["module_templates"] = []
 
@@ -123,19 +161,24 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
 
         self.setup_template_env()
         self.setup_printers()
-        
+
     @staticmethod
-    def _deep_update(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
+    def _deep_update(base: Dict, update: Dict) -> Dict:
         for key, value in update.items():
             if isinstance(value, dict) and key in base and isinstance(base[key], dict):
                 NESTGPUCodeGenerator._deep_update(base[key], value)
             else:
                 base[key] = value
+
         return base
-    
+
     @staticmethod
     def _prepare_experimental_template_tree(standard_template_path: str,
                                             experimental_template_path: str) -> None:
+        """
+        Ensure that the experimental template tree contains the directives/
+        folder. The experimental templates reuse most standard directive files.
+        """
         base_dir = os.path.dirname(__file__)
 
         if not os.path.isabs(standard_template_path):
@@ -163,13 +206,18 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
 
         if os.path.isdir(std_directives) and not os.path.isdir(exp_directives):
             shutil.copytree(std_directives, exp_directives)
-            
+
     def _sync_runtime_options_from_options_dict(self) -> None:
         """
         Synchronize derived runtime attributes after options have been updated.
-        This is crucial because Frontend sets codegen_opts after __init__.
+        This is important because the frontend may set codegen_opts after
+        generator construction.
         """
-        opt_nest_gpu_path = self.get_option("nest_gpu_path") if self.option_exists("nest_gpu_path") else None
+        opt_nest_gpu_path = (
+            self.get_option("nest_gpu_path")
+            if self.option_exists("nest_gpu_path")
+            else None
+        )
 
         if opt_nest_gpu_path:
             self.nest_gpu_path = opt_nest_gpu_path
@@ -179,7 +227,6 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
             else:
                 self.nest_gpu_path = os.getcwd()
 
-        # keep runtime option dictionary in sync
         self._options["nest_gpu_path"] = self.nest_gpu_path
 
         Logger.log_message(
@@ -190,29 +237,39 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
             LoggingLevel.INFO
         )
 
-        solver = self.get_option("solver") if self.option_exists("solver") else "analytic"
+        solver = (
+            self.get_option("solver")
+            if self.option_exists("solver")
+            else "analytic"
+        )
 
         if solver == "experimental":
             exp_templates = copy.deepcopy(self.get_option("experimental_templates"))
-            std_templates = copy.deepcopy(NESTGPUCodeGenerator._default_options["templates"])
+            std_templates = copy.deepcopy(
+                NESTGPUCodeGenerator._default_options["templates"]
+            )
 
             self._prepare_experimental_template_tree(
                 standard_template_path=std_templates["path"],
                 experimental_template_path=exp_templates["path"]
             )
+
             self._options["templates"] = exp_templates
         else:
             self._options["templates"] = copy.deepcopy(
                 NESTGPUCodeGenerator._default_options["templates"]
             )
 
-    def set_options(self, options: Mapping[str, Any]):
+    def set_options(self, options: Mapping[str, object]):
         """
-        Override to react to frontend-provided codegen_opts after generator construction.
+        Override to react to frontend-provided codegen_opts after generator
+        construction.
         """
         unused_opts = super().set_options(options)
+
         self._sync_runtime_options_from_options_dict()
         self.setup_template_env()
+
         return unused_opts
 
     def setup_printers(self):
@@ -260,47 +317,100 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
                 function_call_printer=self._gsl_function_call_printer
             )
         )
+        self._gsl_variable_printer._expression_printer = self._gsl_printer
         self._gsl_function_call_printer._expression_printer = self._gsl_printer
 
-    def generate_module_code(self, neurons: Sequence[ASTModel], synapses: Sequence[ASTModel]):
-        self.copy_models_from_target_path()
+    def _is_experimental_solver(self) -> bool:
+        solver = (
+            self.get_option("solver")
+            if self.option_exists("solver")
+            else "analytic"
+        )
+
+        return solver == "experimental"
+
+    # Module generation / NEST GPU integration
+
+    def generate_module_code(self,
+                             neurons: Sequence[ASTModel],
+                             synapses: Sequence[ASTModel]):
+        """
+        Called after model code has been generated into target_path.
+
+        In experimental mode, the Boost.Odeint solver is already integrated
+        into the generated neuron .h/.cu files. 
+        """
+        self.copy_models_from_target_path(neurons)
         self.add_model_name_to_neuron_header(neurons)
         self.add_model_to_neuron_class(neurons)
         self.add_files_to_makefile(neurons)
 
-    def copy_models_from_target_path(self):
-        types = ["*.h", "*.cu"]
+    def copy_models_from_target_path(self,
+                                     neurons: Optional[Sequence[ASTModel]] = None):
+        """
+        Copy generated model files from the target path into NEST GPU src/.
+
+        In experimental mode, only the current neurons' .h/.cu files are copied.
+        """
         dst_path = os.path.join(self.nest_gpu_path, "src")
-        for _type in types:
-            for file in glob.glob(os.path.join(FrontendConfiguration.get_target_path(), _type)):
+
+        allowed_files = None
+
+        if self._is_experimental_solver() and neurons is not None:
+            allowed_files = set()
+
+            for neuron in neurons:
+                allowed_files.add(f"{neuron.get_name()}.h")
+                allowed_files.add(f"{neuron.get_name()}.cu")
+
+        for file_type in ["*.h", "*.cu"]:
+            for file in glob.glob(
+                os.path.join(FrontendConfiguration.get_target_path(), file_type)
+            ):
+                filename = os.path.basename(file)
+
+                if allowed_files is not None and filename not in allowed_files:
+                    continue
+
                 shutil.copy(file, dst_path)
 
     def add_model_name_to_neuron_header(self, neurons: List[ASTModel]):
-        neuron_models_h_path = str(os.path.join(self.nest_gpu_path, "src", "neuron_models.h"))
+        neuron_models_h_path = str(
+            os.path.join(self.nest_gpu_path, "src", "neuron_models.h")
+        )
+
         shutil.copy(neuron_models_h_path, neuron_models_h_path + ".bak")
 
         neuron_indexes = []
         neuron_names = []
+
         for neuron in neurons:
             neuron_indexes.append("\ni_" + neuron.get_name() + "_model,")
             neuron_names.append("\n, \"" + neuron.get_name() + "\"")
 
         neuron_indexes = "".join(neuron_indexes) + "\n"
         neuron_names = "".join(neuron_names) + "\n"
+
         replace_text_between_tags(neuron_models_h_path, neuron_indexes)
         replace_text_between_tags(neuron_models_h_path, neuron_names, rfind=True)
 
     def add_model_to_neuron_class(self, neurons: List[ASTModel]):
-        neuron_models_cu_path = str(os.path.join(self.nest_gpu_path, "src", "neuron_models.cu"))
+        neuron_models_cu_path = str(
+            os.path.join(self.nest_gpu_path, "src", "neuron_models.cu")
+        )
+
         shutil.copy(neuron_models_cu_path, neuron_models_cu_path + ".bak")
 
         include_files = []
         code_blocks = []
+
         for neuron in neurons:
             include_files.append("\n#include \"" + neuron.get_name() + ".h\"")
+
             model_name_index = "i_" + neuron.get_name() + "_model"
             model_name = neuron.get_name()
             n_ports = len(neuron.get_spike_input_ports())
+
             code_blocks.append(
                 "\n"
                 f"else if (model_name == neuron_model_name[{model_name_index}]) {{\n"
@@ -309,20 +419,28 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
                 f"    node_vect_.push_back({model_name}_group);\n"
                 " }"
             )
+
         include_files = "".join(include_files) + "\n"
         code_blocks = "".join(code_blocks) + "\n"
+
         replace_text_between_tags(neuron_models_cu_path, include_files)
         replace_text_between_tags(neuron_models_cu_path, code_blocks, rfind=True)
 
     def add_files_to_makefile(self, neurons: Sequence[ASTModel]):
-        cmakelists_path = str(os.path.join(self.nest_gpu_path, "src", "CMakeLists.txt"))
+        cmakelists_path = str(
+            os.path.join(self.nest_gpu_path, "src", "CMakeLists.txt")
+        )
+
         shutil.copy(cmakelists_path, cmakelists_path + ".bak")
 
         gen_files = []
+
         for neuron in neurons:
             gen_files.append(f'    "{neuron.get_name()}.h"\n')
             gen_files.append(f'    "{neuron.get_name()}.cu"\n')
+
         gen_files = "".join(gen_files) + "\n"
+
         replace_text_between_tags(
             cmakelists_path,
             gen_files,
@@ -330,9 +448,37 @@ class NESTGPUCodeGenerator(NESTCodeGenerator):
             end_tag="# <<END_NESTML_GENERATED>>"
         )
 
+    # Template namespace
+
     def _get_neuron_model_namespace(self, neuron: ASTModel) -> Dict:
         namespace = super()._get_neuron_model_namespace(neuron)
+
+        solver = (
+            self.get_option("solver")
+            if self.option_exists("solver")
+            else "analytic"
+        )
+
+        if solver == "experimental":
+            # Important:
+            #   The neuron class templates need the normal NEST GPU printer,
+            #   because Init(), PreUpdate(), PostUpdate() use normal generated
+            #   NEST GPU accesses such as var[] and param[].
+            #   The embedded Boost.Odeint derivative generation uses gsl_printer
+            #   so that numeric expressions are emitted in terms of y[].
+            namespace["uses_analytic_solver"] = False
+            namespace["uses_numeric_solver"] = True
+
+            namespace["printer"] = self._printer
+            namespace["printer_no_origin"] = self._printer_no_origin
+            namespace["nest_printer"] = self._nest_printer
+            namespace["gsl_printer"] = self._gsl_printer
+
+            return namespace
+
         if namespace["uses_numeric_solver"]:
             namespace["printer"] = self._gsl_printer
             namespace["uses_analytic_solver"] = False
+            namespace["gsl_printer"] = self._gsl_printer
+
         return namespace
