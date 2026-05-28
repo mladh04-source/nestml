@@ -153,7 +153,7 @@ void Derivatives_g_exc_g_inh_refr_t_w(
       
     dydx[i_V_m] =0;
       
-    dydx[i_w] =((-param[i_E_L]) * param[i_a] + param[i_a] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_tau_w];
+    dydx[i_w] =param[i_a] * ((-param[i_E_L]) / param[i_tau_w] + min(y[i_V_m], param[i_V_peak]) / param[i_tau_w]) - y[i_w] / param[i_tau_w];
       
     dydx[i_refr_t] =(-1.0);
       
@@ -178,7 +178,7 @@ void Derivatives_V_m_g_exc_g_inh_w(
       
     dydx[i_V_m] =param[i_g_L] * (param[i_Delta_T] * exp(((-param[i_V_th]) + min(y[i_V_m], param[i_V_peak])) / param[i_Delta_T]) / param[i_C_m] + param[i_E_L] / param[i_C_m] - min(y[i_V_m], param[i_V_peak]) / param[i_C_m]) + param[i_E_exc] * y[i_g_exc] / param[i_C_m] + param[i_E_inh] * y[i_g_inh] / param[i_C_m] + param[i_I_e] / param[i_C_m] + param[i_I_stim] / param[i_C_m] + ((-y[i_g_exc]) * min(y[i_V_m], param[i_V_peak]) - y[i_g_inh] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_C_m];
       
-    dydx[i_w] =((-param[i_E_L]) * param[i_a] + param[i_a] * min(y[i_V_m], param[i_V_peak]) - y[i_w]) / param[i_tau_w];
+    dydx[i_w] =param[i_a] * ((-param[i_E_L]) / param[i_tau_w] + min(y[i_V_m], param[i_V_peak]) / param[i_tau_w]) - y[i_w] / param[i_tau_w];
       
     dydx[i_refr_t] =0;
       
@@ -410,7 +410,7 @@ __global__ void aeif_cond_alpha_alt_neuron_nestml_PostUpdate(
    */
 
 
-  if (y[i_refr_t] <= 0 && y[i_V_m] >= param[i_V_th])
+  if (y[i_refr_t] <= 0 && y[i_V_m] >= param[i_V_peak])
   {    
     y[i_refr_t] = param[i_refr_T];
     y[i_V_m] = param[i_V_reset];
